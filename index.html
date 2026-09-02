@@ -2598,7 +2598,12 @@ CRITICAL RULES:
         render();
         return;
       }
-      showToast('Outfit added');
+      if (!localStorage.getItem('first-outfit-saved')) {
+        localStorage.setItem('first-outfit-saved', '1');
+        showToast('You saved your first outfit! Yay!');
+      } else {
+        showToast('Outfit added');
+      }
 
       // A newly detected outfit usually isn't "owned" yet (its items are new,
       // not yet matched against anything already marked owned - see
@@ -4212,11 +4217,12 @@ CRITICAL RULES:
       if (state.currentImagePersonBox) syncPersonBoxPosition();
 
       // Enter animation for outfit cards that appeared in the grid since the last
-      // render (added / undo-restored). Skipped for the first render and for bulk
-      // changes (tab switch, filter) where lots of cards appear at once.
+      // render (added / undo-restored / the very first outfit). Skipped on the
+      // first render ever, and for bulk changes (tab switch, filter) where more
+      // than 2 cards appear at once.
       const gridCards = [...document.querySelectorAll('.outfit-grid > [data-outfit-id]')];
       const gridIds = new Set(gridCards.map(el => el.getAttribute('data-outfit-id')));
-      if (render._gridIds && render._gridIds.size && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      if (render._gridIds && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
         const fresh = gridCards.filter(el => !render._gridIds.has(el.getAttribute('data-outfit-id')));
         if (fresh.length && fresh.length <= 2) {
           fresh.forEach(el => {
