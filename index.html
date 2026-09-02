@@ -311,6 +311,26 @@ mo    }
         }
       }
 
+      if (!data && !PREVIEW_MODE) {
+        // First run, nothing stored yet - seed from the bundled seed.json (an
+        // exported wardrobe committed alongside the app) so new users don't start
+        // empty. Persisted right away, so once seeded it behaves like any other
+        // wardrobe (edits/deletes stick, no re-seed on the next load). Absent
+        // file / file:// -> just falls through to an empty wardrobe.
+        try {
+          const res = await fetch('seed.json', { cache: 'no-store' });
+          if (res.ok) {
+            const seed = await res.json();
+            if (seed && Array.isArray(seed.outfits) && seed.outfits.length) {
+              data = { outfits: seed.outfits };
+              await idbSet(IDB_WARDROBE_KEY, data);
+            }
+          }
+        } catch (err) {
+          console.warn('No seed.json to load:', err.message);
+        }
+      }
+
       if (data) {
         state.outfits = data.outfits || [];
         // One-time cleanup: "wanted" used to be a separate flag from "owned", which
