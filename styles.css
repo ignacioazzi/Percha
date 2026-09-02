@@ -1,0 +1,1079 @@
+* {
+   box-sizing: border-box;
+}
+
+/* Indeterminate horizontal progress bar - a track with a segment that sweeps
+   left to right on a loop. Used on the add/review "analyzing" screen. */
+.progress-indeterminate {
+   position: relative;
+   width: 100%;
+   height: 6px;
+   border-radius: 999px;
+   background-color: rgba(37, 99, 235, 0.15);
+   overflow: hidden;
+}
+
+.progress-indeterminate::after {
+   content: '';
+   position: absolute;
+   top: 0;
+   left: 0;
+   height: 100%;
+   width: 40%;
+   border-radius: 999px;
+   background-color: #2563eb;
+   animation: progress-indeterminate-sweep 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate-sweep {
+   0% { left: -40%; }
+   100% { left: 100%; }
+}
+
+html.dark .progress-indeterminate {
+   background-color: rgba(96, 165, 250, 0.2);
+}
+
+html.dark .progress-indeterminate::after {
+   background-color: #60a5fa;
+}
+
+body {
+   margin: 0;
+   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6,
+.app-logo, .main-heading, .h2 {
+   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* One column template, reused per row - edit this to try a different layout
+   (e.g. 10rem 1fr 8rem for a three-column split) instead of touching each row. */
+.outfits-table-row {
+   display: grid;
+   grid-template-columns: 256px 1fr;
+}
+
+/* Drag-to-rescale sets only the --img-scale value per element (inline custom
+   properties are the standard way to pass dynamic data into real CSS) - the
+   actual transform rule lives here, not scattered across every img tag. */
+.outfit-photo {
+   position: relative;
+   width: 100%;
+   height: 100%;
+   /* stored offset/scale from the (now removed) drag-to-adjust feature - kept so
+      outfits saved with an adjustment still render it in the gallery. No
+      !important, so the modal's scale-in animation can take over its transform. */
+   transform: translate(var(--img-offset-x, 0%), var(--img-offset-y, 0%)) scale(var(--img-scale, 1));
+   transform-origin: center;
+}
+
+.outfit-photo-pannable {
+   cursor: grab;
+   touch-action: none;
+}
+
+.outfit-photo-pannable:active {
+   cursor: grabbing;
+}
+
+.outfit-photo-cover {
+   object-fit: cover;
+}
+
+.outfit-photo-contain {
+   object-fit: contain;
+}
+
+.outfit-photo-rounded {
+   border-radius: 0.5rem;
+}
+
+/* Fades the foreground photo's own edges to transparent so they blend into
+   .outfit-photo-backdrop underneath, instead of a hard cutoff between the two.
+   Two linear-gradient masks (one per axis), intersected, so all four edges
+   fade independently along the rectangle instead of an oval falling inward
+   from the corners. */
+.outfit-photo-soft-edge {
+   --edge-fade: 3%;
+   mask-image:
+      linear-gradient(to right, transparent, black var(--edge-fade), black calc(100% - var(--edge-fade)), transparent),
+      linear-gradient(to bottom, transparent, black var(--edge-fade), black calc(100% - var(--edge-fade)), transparent);
+   mask-composite: intersect;
+   -webkit-mask-image:
+      linear-gradient(to right, transparent, black var(--edge-fade), black calc(100% - var(--edge-fade)), transparent),
+      linear-gradient(to bottom, transparent, black var(--edge-fade), black calc(100% - var(--edge-fade)), transparent);
+   -webkit-mask-composite: source-in;
+}
+
+/* Scaled-up, blurred copy of the same photo sitting behind .outfit-photo, so
+   shrinking the foreground (--img-scale < 1) or a contain-fit gap reveals a
+   soft echo of the image instead of the container's flat background color. */
+.outfit-photo-backdrop {
+   position: absolute;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+   /* overscan so the blur's soft (fading-to-transparent) edge doesn't reveal a
+      pale border of the container background around the photo */
+   transform: scale(1.12);
+   filter: blur(16px);
+}
+
+/* --- Named component classes -----------------------------------------------
+   One class per repeated pattern instead of restating 8-10 Tailwind utilities
+   every time it's used. Active/inactive state is driven by the data-sl-active
+   attribute already threaded through these elements, rather than a JS ternary
+   picking between two different utility strings. */
+
+.h2 {
+   font-size: 24px;
+   line-height: 32px;
+   font-weight: 700;
+   color: #1f2937;
+}
+
+html.dark .h2 {
+   color: #f3f4f6;
+}
+
+.modal-backdrop {
+   position: fixed;
+   inset: 0;
+   background-color: rgba(0, 0, 0, 0.5);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   z-index: 50;
+   padding: 16px;
+   cursor: pointer;
+}
+
+/* The backdrop itself is click-to-dismiss (pointer), but the panel sitting on
+   it is not - reset the cursor for its content. */
+.modal-backdrop > * {
+   cursor: auto;
+}
+
+/* Modal enter/leave. .modal-anim-in is added by render() only on the render
+   where a modal first opens; .modal-anim-out is added just before a modal is
+   torn down (see closeModalAnimated). */
+@keyframes modal-fade-in {
+   from { opacity: 0; }
+   to { opacity: 1; }
+}
+@keyframes modal-panel-in {
+   from { opacity: 0; transform: translateY(24px); }
+   to { opacity: 1; transform: none; }
+}
+@keyframes modal-fade-out {
+   from { opacity: 1; }
+   to { opacity: 0; }
+}
+@keyframes modal-panel-out {
+   from { opacity: 1; transform: none; }
+   to { opacity: 0; transform: translateY(24px); }
+}
+
+.modal-anim-in {
+   animation: modal-fade-in 0.2s ease;
+}
+.modal-anim-in > * {
+   animation: modal-panel-in 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-anim-out {
+   animation: modal-fade-out 0.2s ease forwards;
+   pointer-events: none;
+}
+.modal-anim-out > * {
+   animation: modal-panel-out 0.2s ease forwards;
+}
+
+/* Plays once on mount - only applied on the render that first shows the
+   add/review screen (see state.addViewJustEntered), not on every re-render
+   while it's already up. */
+@keyframes screen-fade-in {
+   from { opacity: 0; }
+   to { opacity: 1; }
+}
+.screen-fade-in {
+   /* Kept short on purpose - this screen's own spinner is styled identically
+      to the upload-processing modal's spinner it replaces (same size/color,
+      same spot on screen). A slow fade here reads as that old spinner
+      lingering/reappearing rather than a clean handoff to the new screen. */
+   animation: screen-fade-in 0.3s ease;
+}
+
+@keyframes message-fade-out {
+   from { opacity: 1; }
+   to { opacity: 0; }
+}
+.message-fade-out {
+   animation: message-fade-out 0.35s ease forwards;
+}
+
+/* Standardised toast - one look for every step's status message (see showToast /
+   showStatusToast). Black pill, white text, pinned bottom-centre. */
+@keyframes toast-in {
+   from { opacity: 0; transform: translate(-50%, 8px); }
+   to { opacity: 1; transform: translate(-50%, 0); }
+}
+.toast {
+   position: fixed;
+   bottom: 32px;
+   left: 50%;
+   transform: translateX(-50%);
+   background: #000;
+   color: #fff;
+   padding: 12px 24px;
+   font-size: 14px;
+   font-weight: 500;
+   border-radius: 999px;
+   box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.45);
+   z-index: 60;
+   max-width: calc(100vw - 32px);
+   text-align: center;
+   animation: toast-in 0.2s ease;
+}
+
+/* "Undo" action inside a toast */
+.toast__action {
+   margin-left: 14px;
+   padding: 0;
+   background: none;
+   border: none;
+   color: #7dd3fc;
+   font: inherit;
+   font-weight: 700;
+   cursor: pointer;
+}
+.toast__action:hover {
+   color: #bae6fd;
+}
+/* the long-running status toast carries a small spinner via ::before */
+.toast--status::before {
+   content: '';
+   display: inline-block;
+   width: 12px;
+   height: 12px;
+   margin-right: 8px;
+   vertical-align: -1px;
+   border: 2px solid rgba(255, 255, 255, 0.35);
+   border-top-color: #fff;
+   border-radius: 999px;
+   animation: spin 1.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.card {
+   position: relative;
+   width: 100%;
+   aspect-ratio: 3 / 4;
+   background-color: transparent;
+   border-radius: 4px;
+   box-shadow: none;
+   overflow: hidden;
+}
+
+/* Missing-items / search-match label, sitting BELOW the card (not an overlay).
+   Same type treatment as .label (10px, uppercase, tracked). */
+.card__caption {
+   margin-top: 8px;
+   font-size: 10px;
+   letter-spacing: 0.06em;
+   text-transform: uppercase;
+   font-weight: 500;
+   color: #6b7280;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+}
+html.dark .card__caption {
+   color: #9ca3af;
+}
+
+/* Enter animation for a card that appeared in the grid (add / undo). Applied
+   from render()'s tail as .card-enter, guarded against bulk changes. */
+@keyframes card-enter {
+   0%   { opacity: 0; transform: scale(0.82); }
+   60%  { opacity: 1; transform: scale(1.03); }
+   100% { opacity: 1; transform: scale(1); }
+}
+.outfit-grid .card-enter {
+   animation: card-enter 0.44s cubic-bezier(0.33, 1.2, 0.4, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+   .outfit-grid .card-enter { animation: none; }
+}
+
+.empty {
+   text-align: center;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   padding-top: 80px;
+   height: 100%;
+   padding-bottom: 80px;
+   background-color: #fff;
+   border-radius: 16px;
+   /* box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1); */
+   /* border: 2px dashed #d1d5db; */
+}
+
+html.dark .empty {
+   background-color: #1f2937;
+   border-color: #4b5563;
+}
+
+.label {
+   font-size: 10px;
+   letter-spacing: 0.06em;
+   text-transform: uppercase;
+   font-weight: 500;
+   color: #6b7280;
+}
+
+html.dark .label {
+   color: #9ca3af;
+}
+
+.chip {
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   padding: 6px 12px;
+   border-radius: 8px;
+   background-color: #f3f4f6;
+   font-size: 14px;
+   color: #374151;
+}
+
+html.dark .chip {
+   background-color: #374151;
+   color: #e5e7eb;
+}
+
+/* iOS-style segmented control: a soft grey track holding pill segments, with a
+   single white "thumb" that slides horizontally to the active segment. The
+   thumb is positioned/animated from render() (see its .segmented[data-seg]
+   loop) because render() rebuilds this DOM wholesale on every state change. */
+.segmented {
+   position: relative;
+   display: inline-flex;
+   gap: 2px;
+   padding: 2px;
+   background-color: #eceef1;
+   border-radius: 9px;
+}
+
+html.dark .segmented {
+   background-color: #374151;
+}
+
+.segmented-thumb {
+   position: absolute;
+   top: 2px;
+   bottom: 2px;
+   left: 0;
+   width: 0;
+   border-radius: 7px;
+   background-color: #fff;
+   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.04);
+   transform: translateX(0);
+   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+   pointer-events: none;
+   z-index: 0;
+}
+
+html.dark .segmented-thumb {
+   background-color: #6b7280;
+}
+
+.segmented-opt {
+   position: relative;
+   z-index: 1;
+   padding: 6px 18px;
+   font-size: 14px;
+   font-weight: 500;
+   background-color: transparent;
+   color: #4b5563;
+   cursor: pointer;
+   border: none;
+   border-radius: 7px;
+   transition: color 0.15s ease;
+}
+
+.segmented-opt:hover {
+   color: #111827;
+}
+
+html.dark .segmented-opt {
+   background-color: transparent;
+   color: #d1d5db;
+}
+
+html.dark .segmented-opt:hover {
+   color: #fff;
+}
+
+.segmented-opt[data-sl-active="true"] {
+   color: #111827;
+   font-weight: 600;
+}
+
+html.dark .segmented-opt[data-sl-active="true"] {
+   color: #fff;
+}
+
+/* Owned/Wanted/In-wardrobe style toggles - unifies what used to be two visually
+   different treatments (an outline pill in Pieces, a filled green/purple pill in
+   the outfit modal) into one consistent look. */
+.status-pill {
+   padding: 5px 10px;
+   font-size: 12px;
+   font-family: inherit;
+   font-weight: 600;
+   line-height: 1;
+   border-radius: 328px;
+   border: 1px solid #d1d5db;
+   color: #6b7280;
+   background: transparent;
+   height: 31px!important;
+   cursor: pointer;
+   display: flex;
+   gap: 5px;
+   align-items: center;
+   justify-content: center;
+   white-space: nowrap;
+   transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.status-pill:hover {
+   border-color: #9ca3af;
+}
+
+html.dark .status-pill {
+   border-color: #4b5563;
+   color: #9ca3af;
+}
+
+html.dark .status-pill:hover {
+   border-color: #6b7280;
+}
+
+.status-pill[data-sl-active="true"] {
+   border-color: #22c55e;
+   background: #f0fdf4;
+   color: #15803d;
+   font-weight: 600;
+}
+
+html.dark .status-pill[data-sl-active="true"] {
+   border-color: #22c55e;
+   background: rgba(34, 197, 94, 0.12);
+   color: #4ade80;
+}
+
+/* Leading status dot inside .status-pill - grey when off, green when on. */
+.status-pill-dot {
+   width: 8px;
+   height: 8px;
+   border-radius: 999px;
+   background-color: #9ca3af;
+   flex-shrink: 0;
+   transition: background-color 0.18s ease;
+}
+
+.status-pill[data-sl-active="true"] .status-pill-dot {
+   background-color: #22c55e;
+}
+
+button{
+       border-radius: 4px;
+}
+.btn-primary {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   gap: 8px;
+   padding: 12px 24px;
+   font-weight: 600;
+   color: #fff;
+   background-color: #2563eb;
+   cursor: pointer;
+   border: none;
+   /* border-radius: 4px; */
+}
+
+.btn-primary:hover {
+   background-color: #1d4ed8;
+}
+
+.btn-primary[data-sl-variant="danger"] {
+   background-color: #dc2626;
+}
+
+.btn-primary[data-sl-variant="danger"]:hover {
+   background-color: #b91c1c;
+}
+
+/* Pieces in the search dropdown - inline-block chips that wrap, rather than a
+   one-per-line list. Edit this one rule to restyle every piece result at once. */
+.search-piece-chip {
+   display: inline-flex;
+   align-items: center;
+   gap: 8px;
+   padding: 6px 12px;
+   border-radius: 9999px;
+   background-color: #f3f4f6;
+   font-size: 14px;
+   color: #374151;
+   cursor: pointer;
+   border: none;
+   max-width: 100%;
+}
+
+.search-piece-chip:hover {
+   background-color: #e5e7eb;
+}
+
+html.dark .search-piece-chip {
+   background-color: #374151;
+   color: #e5e7eb;
+}
+
+html.dark .search-piece-chip:hover {
+   background-color: #4b5563;
+}
+
+/* Keyboard-navigated (ArrowUp/ArrowDown) chip in the search dropdown - see
+   state.searchActiveIndex and handleSearchKeydown. */
+.search-piece-chip[data-active="true"] {
+   background-color: #dbeafe;
+   box-shadow: 0 0 0 2px #3b82f6;
+}
+
+html.dark .search-piece-chip[data-active="true"] {
+   background-color: #1e3a8a;
+   box-shadow: 0 0 0 2px #60a5fa;
+}
+
+
+
+.color-row > div {
+    width: 100%;
+    display: flex;
+    flex-grow: 1;
+    /* width: 42px; */
+    /* height: 100%; */
+    /* justify-content: space-between; */
+}
+
+.color-row-container {
+    display: flex;
+    HEIGHT: AUTO;
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.color-row {
+    border-width: 0px;
+    border-bottom-width: 1px;
+    margin: 0px!important;
+    padding: 1em 0;
+    display: flex;
+    width: 100%;
+    border: 0;
+    align-items: center;
+}
+
+.color-swatch {
+    width: 42px;
+    height: 42px;
+    border-radius: 11px!important;
+    border: 4px solid #ffffff;
+}
+
+/* Themeable replacement for the raw <input type="color"> on the review screen -
+   the native input stays in the DOM (sr-only) so the OS picker still opens on
+   click, but the visible swatch is our own element and follows light/dark. */
+.color-swatch-picker {
+    flex-shrink: 0;
+    display: inline-flex;
+    cursor: pointer;
+    border-radius: 999px;
+    padding: 3px;
+    background-color: #e5e7eb;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.color-swatch-picker:hover {
+    background-color: #d1d5db;
+}
+
+.color-swatch-picker:focus-within {
+    box-shadow: 0 0 0 2px #2563eb;
+}
+
+.color-swatch-dot {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    background-color: var(--swatch-color, #888);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+html.dark .color-swatch-picker {
+    background-color: #374151;
+}
+
+html.dark .color-swatch-picker:hover {
+    background-color: #4b5563;
+}
+
+html.dark .color-swatch-dot {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.color-row + .color-row {
+   border-top: 1px solid #e5e7eb;
+} 
+
+/* =========================================================================
+   HEADER  (.app-header__*)  and  MAIN CONTENT  (.app-main, .main-toolbar__*)
+   Distinct, hand-editable classes - no Tailwind utilities on these elements.
+   Dark mode via `html.dark` overrides at the end of each block.
+   ========================================================================= */
+
+.app-header {
+    background-color: #ffffff;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.app-header__inner {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.app-header__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.app-logo {
+    margin: 0;
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.app-header__actions {
+    display: flex;
+    gap: 12px;
+}
+
+/* "Add from URL" - currently hidden (hidden attribute), kept styled for later. */
+.header-url-btn {
+    height: 40px;
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.header-url-btn:hover {
+    background-color: #f9fafb;
+}
+
+.header-url-btn__icon {
+    width: 16px;
+    height: 16px;
+}
+
+.header-upload-btn {
+    height: 40px;
+    padding: 0 16px;
+    font-size: 14px;
+    border-radius: 8px;
+}
+
+.header-menu {
+    position: relative;
+}
+
+.header-menu__trigger {
+    height: 40px;
+    width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.header-menu__trigger:hover {
+    background-color: #f9fafb;
+}
+
+.header-menu__trigger-icon {
+    width: 20px;
+    height: 20px;
+}
+
+/* Full-viewport click-catcher that closes the menu. */
+.header-menu__scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+.header-menu__dropdown {
+    position: absolute;
+    right: 0;
+    margin-top: 8px;
+    width: 14rem;
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    z-index: 50;
+    overflow: hidden;
+}
+
+.header-menu__item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 14px;
+    background: transparent;
+    border: none;
+    border-top: 1px solid #f3f4f6;
+    color: #374151;
+    cursor: pointer;
+}
+
+.header-menu__item:first-child {
+    border-top: none;
+}
+
+.header-menu__item:hover {
+    background-color: #f9fafb;
+}
+
+.header-menu__item--danger {
+    color: #dc2626;
+}
+
+.header-menu__item--danger:hover {
+    background-color: #fef2f2;
+}
+
+.app-main {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 32px 16px;
+}
+
+/* Add-outfit / detail modal shell (renderModalShell). One #add-modal-card for
+   all three states (analyzing / review / detail); morphdom keeps it, and its
+   max-width transition takes it from compact (image only) to wide (image +
+   panel). The image column is a FIXED width so it never resizes during that -
+   only more of the always-full-size right panel gets revealed, and the panel
+   fades/slides in after the width animation finishes. */
+.add-modal-wrap {
+    max-width: 100%;
+    cursor: pointer; /* the empty space beside the card is click-to-close */
+}
+.add-modal-wrap > * {
+    cursor: auto;
+}
+
+.add-modal-card {
+    overflow-x: hidden;
+    overflow-y: auto;
+    transition: max-width 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.add-modal-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.add-modal-image {
+    width: 100%;
+    flex-shrink: 0;
+}
+
+.add-modal-panel {
+    width: 100%;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    /* stretch to at least the image's height so the item list (flex-grow: 1)
+       can fill the gap and push the button row to the bottom; grows past it
+       and lets the card scroll when the content is taller. */
+    align-self: stretch;
+    opacity: 1;
+    transform: none;
+    overflow: hidden;
+    /* delay so it comes in only once the card has finished widening */
+    transition: opacity 0.22s ease 0.24s, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.24s;
+}
+
+.add-modal-panel--hidden {
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    transform: translateX(-24px);
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0s;
+}
+
+/* Entrance animations - ONLY on .add-modal-card--animate, which is set only
+   while walking the fresh paste/upload -> analyzing -> review -> detail flow
+   (state.animateAddFlow). Opening an existing outfit from the gallery gets no
+   card--animate class, so nothing plays. */
+
+/* Staggered reveal of the panel's rows (title, then each item, then buttons).
+   --stagger-i is set per element in the markup. `both` fill keeps each row at
+   opacity 0 until its delay fires. */
+@keyframes stagger-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+.add-modal-card--animate .add-modal-panel .stagger {
+    animation: stagger-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(0.3s + var(--stagger-i, 0) * 130ms);
+}
+
+/* Scale + fade the photo in. The image element persists across
+   analyzing/review/detail (morphdom), so this only runs once, on creation. */
+@keyframes add-image-in {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}
+.add-modal-card--animate .outfit-photo,
+.add-modal-card--animate .outfit-photo-backdrop {
+    animation: add-image-in 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .add-modal-card--animate .add-modal-panel .stagger,
+    .add-modal-card--animate .outfit-photo,
+    .add-modal-card--animate .outfit-photo-backdrop { animation: none; }
+}
+
+@media (min-width: 768px) {
+    .add-modal-body {
+        flex-direction: row;
+    }
+    .add-modal-image {
+        width: 34rem;
+    }
+    .add-modal-panel {
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: 35rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .add-modal-card,
+    .add-modal-panel { transition: none; }
+}
+
+.main-section__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.main-heading {
+    margin: 0;
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+html.dark .main-heading {
+    color: #f3f4f6;
+}
+
+/* Card grids in Main content. Edit column counts / gap here. */
+.outfit-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pieces-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+    .outfit-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pieces-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+    .outfit-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .pieces-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    /* explicit column choice from the toolbar toggle */
+    .outfit-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .outfit-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Sort dropdown in the toolbar's right cell. */
+.sort-select {
+    height: 100%;
+    padding: 8px 40px 8px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #4b5563;
+    background-color: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 9px;
+    cursor: pointer;
+    /* room + a custom chevron on the right (native arrow hidden) */
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+}
+
+.sort-select:hover {
+    background-color: #f9fafb;
+}
+
+html.dark .sort-select {
+    color: #d1d5db;
+    background-color: #1f2937;
+    border-color: #4b5563;
+}
+
+html.dark .sort-select:hover {
+    background-color: #374151;
+}
+
+.main-toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin: 0 0 3em 0;
+}
+
+.main-toolbar__start,
+.main-toolbar__center,
+.main-toolbar__cols,
+.main-toolbar__end {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+@media (min-width: 640px) {
+    .main-toolbar {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+html.dark .app-header {
+    background-color: #1f2937;
+}
+
+html.dark .app-logo {
+    color: #f3f4f6;
+}
+
+html.dark .header-url-btn,
+html.dark .header-menu__trigger {
+    border-color: #4b5563;
+    color: #e5e7eb;
+}
+
+html.dark .header-url-btn:hover,
+html.dark .header-menu__trigger:hover {
+    background-color: #374151;
+}
+
+html.dark .header-menu__dropdown {
+    background-color: #1f2937;
+    border-color: #4b5563;
+}
+
+html.dark .header-menu__item {
+    border-top-color: #374151;
+    color: #e5e7eb;
+}
+
+html.dark .header-menu__item:hover {
+    background-color: #374151;
+}
+
+html.dark .header-menu__item--danger {
+    color: #f87171;
+}
+
+html.dark .header-menu__item--danger:hover {
+    background-color: rgba(127, 29, 29, 0.2);
+}
+
+div#analyzing-message {
+   height: 100%;
+}
+
+.link_btn {
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 328px;
+   font-weight:bold;
+   text-decoration:none!important;
+    border: 1px solid #aabade;
+    background: transparent;
+    height: 31px !important;
+    cursor: pointer;
+    /* display: flex; */
+    gap: 5px;
+}
+
+
+
+.modal-panel-details {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    justify-content: flex-start;
+}
+
+div#search-dropdown {
+    max-height: 11em;
+    overflow-y: scroll;
+}
