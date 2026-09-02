@@ -1944,10 +1944,15 @@ CRITICAL RULES:
       e.target.value = '';
     }
 
-    // Sample thumbnails on the empty state: fetch the bundled image and run it
+    // Sample thumbnails on the empty state: load the bundled image and run it
     // through the exact same processFile() path a real upload uses - no mock,
-    // real Gemini detection and Studio Finish.
+    // real Gemini detection and Studio Finish. fetch() (and canvas readback) are
+    // both blocked when the page is opened as a file://, so it needs to be served.
     async function useSampleImage(src) {
+      if (location.protocol === 'file:') {
+        showToast('Sample images only work when the app is served over http (e.g. `python3 -m http.server`), not opened as a file.');
+        return;
+      }
       try {
         const res = await fetch(src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1955,7 +1960,7 @@ CRITICAL RULES:
         processFile(new File([blob], src.split('/').pop(), { type: blob.type || 'image/jpeg' }));
       } catch (err) {
         console.error('useSampleImage failed:', err);
-        showToast('Could not load that sample image');
+        showToast('Could not load that sample image — is the local server still running?');
       }
     }
 
@@ -3044,6 +3049,22 @@ CRITICAL RULES:
       render();
     }
 
+    // Clicking the logo - back to the default view: Outfits tab, Owned filter,
+    // no search, any modal closed.
+    function goHome() {
+      state.mainTab = 'outfits';
+      localStorage.setItem('main-tab', 'outfits');
+      state.statusFilter = 'owned';
+      localStorage.setItem('status-filter', 'owned');
+      state.searchQuery = '';
+      state.searchOpen = false;
+      state.searchActiveIndex = -1;
+      state.selectedOutfit = null;
+      state.showMenu = false;
+      state.view = 'gallery';
+      render();
+    }
+
     // True when the query only makes sense as a search across MULTIPLE items
     // (e.g. "blue jeans white tshirt"), not an ordinary - if multi-word -
     // single-item search (e.g. "black leather jacket", which is exactly one
@@ -4060,7 +4081,7 @@ CRITICAL RULES:
           <header class="app-header">
             <div class="app-header__inner">
               <div class="app-header__brand">
-                <h1 class="app-logo">Percha</h1>
+                <img src="Percha.svg" alt="Percha" class="app-logo" role="button" tabindex="0" title="Home" onclick="goHome()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goHome();}">
               </div>
               ${renderSearchBox()}
               <div class="app-header__actions">
@@ -5315,6 +5336,7 @@ CRITICAL RULES:
     window.toggleOwned = toggleOwned;
     window.togglePieceFlag = togglePieceFlag;
     window.setMainTab = setMainTab;
+    window.goHome = goHome;
     window.setSearchQuery = setSearchQuery;
     window.clearSearch = clearSearch;
     window.handleSearchKeydown = handleSearchKeydown;
