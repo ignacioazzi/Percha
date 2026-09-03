@@ -49,6 +49,11 @@ html.dark .progress-indeterminate::after {
 body {
    margin: 0;
    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+   background-color: #faf9fc;
+}
+
+html.dark body {
+   background-color: #14161c;
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -153,8 +158,6 @@ html.dark .h2 {
    position: fixed;
    inset: 0;
    background-color: rgba(0, 0, 0, 0.5);
-   /* so the sample-tap transition can fade the tint in together with the photo
-      grow (--fade-only starts it transparent, useSampleImage animates it dark) */
    transition: background-color calc(0.5s * var(--anim-scale)) cubic-bezier(.22, 1, .3, 1);
    display: flex;
    align-items: center;
@@ -206,21 +209,6 @@ html.dark .h2 {
 }
 .modal-anim-out > * {
    animation: modal-panel-out calc(0.2s * var(--anim-scale)) ease forwards;
-}
-/* Sample-tap entrance: the real #add-modal-card is FLIP'd from the thumbnail
-   (see useSampleImage) while the backdrop tint + card opacity fade in over the
-   same --fly-ms window. useSampleImage's finish() removes this class. */
-@keyframes sample-fly-in {
-   /* tint only - the card itself stays fully opaque and just grows */
-   from { background-color: rgba(0, 0, 0, 0); }
-   to   { background-color: rgba(0, 0, 0, 0.5); }
-}
-.modal-anim-in--fade-only {
-   background-color: transparent;
-   animation: sample-fly-in var(--fly-ms, 550ms) cubic-bezier(.22, 1, .3, 1) both;
-}
-.modal-anim-in--fade-only > * {
-   animation: none; /* card fades in via the backdrop's opacity, no separate slide */
 }
 
 /* Plays once on mount - only applied on the render that first shows the
@@ -333,6 +321,11 @@ html.dark .h2 {
 html.dark .card__caption {
    color: #9ca3af;
 }
+@media (max-width: 640px) {
+   .card__caption {
+      font-size: 12px;
+   }
+}
 
 /* Enter animation for a card that appeared in the grid (add / undo). Applied
    from render()'s tail as .card-enter, guarded against bulk changes. */
@@ -376,6 +369,117 @@ html.dark .empty {
 }
 .empty--enter {
    animation: empty-fade-in 0.4s cubic-bezier(.22, 1, .3, 1);
+}
+
+/* First-run hero (renderGalleryView, no outfits). Full-bleed mint splash that
+   replaces the app header; ?debug and every size get the same look. */
+.app-main.app-main--hero {
+   background: #faf9fc;
+   max-width: none;
+   margin: 0;
+   min-height: 100vh;
+   min-height: 100dvh;
+   display: flex;
+   align-items: flex-start;
+   justify-content: center;
+   padding: 0;
+}
+html.dark .app-main.app-main--hero {
+   background: #14161c;
+}
+
+.empty-hero {
+   width: 100%;
+   max-width: 30rem;
+   margin: 0 auto;
+   padding: clamp(40px, 9vh, 96px) 24px 72px;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   text-align: center;
+}
+.empty-hero__logo {
+   width: 220px;
+   max-width: 66vw;
+   aspect-ratio: 188 / 53;
+   background-color: #2b47d3;
+   -webkit-mask: url(percha2.svg) center / contain no-repeat;
+   mask: url(percha2.svg) center / contain no-repeat;
+   cursor: pointer;
+   margin-bottom: 10px;
+}
+.empty-hero__tagline {
+   margin: 0 0 18px;
+   font-size: 22px;
+   font-weight: 400;
+   color: #0b1b2b;
+}
+html.dark .empty-hero__tagline {
+   color: #e5e7eb;
+}
+.empty-hero__body {
+   margin: 0 0 24px;
+   max-width: 22rem;
+   font-size: 19px;
+   line-height: 1.5;
+   color: #24313f;
+}
+html.dark .empty-hero__body {
+   color: #cbd5e1;
+}
+.empty-hero__cta {
+   border-radius: 999px;
+   padding: 16px 30px;
+   font-size: 16px;
+   font-weight: 400;
+   background: #2b47d3;
+}
+.empty-hero__divider {
+   display: flex;
+   align-items: center;
+   gap: 12px;
+   margin: 30px 0 26px;
+   font-size: 15px;
+   color: #24313f;
+}
+html.dark .empty-hero__divider {
+   color: #cbd5e1;
+}
+.empty-hero__divider::before,
+.empty-hero__divider::after {
+   content: "";
+   width: 11px;
+   height: 1px;
+   background: currentColor;
+   opacity: 0.3;
+}
+.empty-hero__samples {
+   display: flex;
+   gap: 14px;
+   justify-content: center;
+   width: 100%;
+}
+.empty-hero__sample {
+   flex: 1 1 0;
+   max-width: 128px;
+   aspect-ratio: 3 / 4;
+   padding: 0;
+   border: 0;
+   border-radius: 16px;
+   overflow: hidden;
+   cursor: pointer;
+   background: none;
+   box-shadow: 0 16px 34px -12px rgba(15, 40, 45, 0.45);
+   transition: transform 0.16s ease;
+}
+.empty-hero__sample:hover {
+   transform: translateY(-3px);
+}
+.empty-hero__sample img {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+   display: block;
 }
 
 .label {
@@ -554,16 +658,16 @@ button{
    justify-content: center;
    gap: 8px;
    padding: 12px 24px;
-   font-weight: 600;
+   font-weight: 400;
    color: #fff;
-   background-color: #2563eb;
+   background-color: #2b47d3;
    cursor: pointer;
    border: none;
    /* border-radius: 4px; */
 }
 
 .btn-primary:hover {
-   background-color: #1d4ed8;
+   background-color: #2139b8;
 }
 
 .btn-primary[data-sl-variant="danger"] {
@@ -651,6 +755,40 @@ html.dark .search-piece-chip[data-active="true"] {
     border: 3px solid #ffffff;
 }
 
+/* Skeleton placeholders shown in the panel while Gemini is recognizing items -
+   same row layout as .color-row, replaced by the real rows (which stagger-fade
+   in) once detection finishes. */
+@keyframes skeleton-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}
+.skeleton {
+    background-color: rgba(0, 0, 0, 0.07);
+    background-image: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0) 100%);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 8px;
+}
+html.dark .skeleton {
+    background-color: rgba(255, 255, 255, 0.08);
+    background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0) 100%);
+}
+.skeleton--dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 11px;
+    flex-shrink: 0;
+}
+.skeleton--bar {
+    height: 14px;
+    flex: 1;
+    max-width: 62%;
+}
+.color-row:nth-child(2) .skeleton--bar {
+    max-width: 45%;
+}
+
 /* Themeable replacement for the raw <input type="color"> on the review screen -
    the native input stays in the DOM (sr-only) so the OS picker still opens on
    click, but the visible swatch is our own element and follows light/dark. */
@@ -703,7 +841,7 @@ html.dark .color-swatch-dot {
    ========================================================================= */
 
 .app-header {
-    background-color: #ffffff;
+    background-color: #faf9fc;
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
@@ -726,8 +864,11 @@ html.dark .color-swatch-dot {
 
 .app-logo {
     display: block;
-    height: 28px;
-    width: auto;
+    height: 26px;
+    width: calc(26px * 188 / 53);
+    background-color: #2b47d3;
+    -webkit-mask: url(percha2.svg) center / contain no-repeat;
+    mask: url(percha2.svg) center / contain no-repeat;
     cursor: pointer;
 }
 
@@ -883,27 +1024,23 @@ html.dark .color-swatch-dot {
 }
 
 .add-modal-card {
+    position: relative;
     max-height: 90vh;
     overflow-x: hidden;
     overflow-y: auto;
+    border-radius: 1rem;
     transition: max-width calc(0.32s * var(--anim-scale)) cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Mobile: full-screen sheet - edge to edge, reaching the bottom. */
-@media (max-width: 640px) {
-    .add-modal-card {
-        min-height: 100dvh;
-        max-height: 100dvh;
-        border-radius: 0;
-    }
-    .add-modal-panel {
-        padding: 1.5rem;
-    }
+/* Mobile-only card header (back arrow + outfit name). Hidden on desktop. */
+.add-modal-mobilehead {
+    display: none;
 }
 
 .add-modal-body {
     display: flex;
     flex-direction: column;
+    min-height: 0;
 }
 
 .add-modal-image {
@@ -972,6 +1109,74 @@ html.dark .color-swatch-dot {
 @media (prefers-reduced-motion: reduce) {
     .add-modal-card,
     .add-modal-panel { transition: none; }
+}
+
+/* Detail modal Save + Delete/Discard: stacked full-width on desktop (display:
+   contents lets them flow in the parent flex-col), side by side on mobile. */
+.detail-actions {
+    display: contents;
+}
+
+/* Narrow / column layout (below the 768px row breakpoint): the modal is a
+   full-screen sheet (image on top, panel below). Placed AFTER the base
+   .add-modal-* rules so it wins the cascade. */
+@media (max-width: 767px) {
+    .detail-actions {
+        display: flex;
+        gap: 12px;
+    }
+    .detail-actions > * {
+        flex: 1;
+    }
+
+    .add-modal-card {
+        border-radius: 0;
+        min-height: 100dvh;
+        max-height: 100dvh;
+    }
+    /* panel fills the sheet below the image so its flex:1 pushes the button
+       row to the bottom */
+    .add-modal-body {
+        min-height: 100dvh;
+    }
+    .add-modal-panel {
+        padding: 1.5rem;
+        flex: 1;
+    }
+    /* the outfit name is redundant on the mobile sheet - drop it (the
+       "Recognizing elements" status heading stays) */
+    .modal-panel-title {
+        display: none;
+    }
+
+    /* Back arrow floating over the top-left of the photo (transparent, the
+       image shows through). */
+    .add-modal-mobilehead {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 3;
+        padding: 8px;
+        pointer-events: none;
+    }
+    .add-modal-mobilehead__back {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: #000;
+        cursor: pointer;
+    }
+    .add-modal-mobilehead__back svg {
+        width: 24px;
+        height: 24px;
+    }
 }
 
 .main-section__head {
@@ -1095,11 +1300,6 @@ html.dark .app-header {
     background-color: #1f2937;
 }
 
-/* Percha.svg is a black wordmark - flip it for dark mode. Drop this if you swap
-   in a colour logo or add a separate light asset. */
-html.dark .app-logo {
-    filter: invert(1) brightness(1.6);
-}
 
 html.dark .header-url-btn,
 html.dark .header-menu__trigger {

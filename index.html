@@ -24,7 +24,7 @@
   .transition-colors {
    transition-duration: 50000ms}
 </style>
-<body class="bg-white dark:bg-gray-900 min-h-screen">
+<body class="min-h-screen">
   <!-- Split from one #app into two containers purely as a render()
        optimization: #app-main (header + gallery/add-view) is skipped on
        renders where an overlay modal (Detail/Settings/URL/Generate) is
@@ -2015,11 +2015,6 @@ CRITICAL RULES:
         showToast('Sample images only work when the app is served over http (e.g. `python3 -m http.server`), not opened as a file.');
         return;
       }
-
-      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const fromRect = (thumbEl && !reduce) ? thumbEl.getBoundingClientRect() : null;
-      if (fromRect && fromRect.width) sampleFly.pending = true;
-
       try {
         const res = await fetch(src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -2027,70 +2022,9 @@ CRITICAL RULES:
         processFile(new File([blob], src.split('/').pop(), { type: blob.type || 'image/jpeg' }));
       } catch (err) {
         console.error('useSampleImage failed:', err);
-        sampleFly.pending = false;
         showToast('Could not load that sample image — is the local server still running?');
-        return;
       }
-
-      if (!fromRect || !fromRect.width) return;
-
-      // Shared-element grow: FLIP the real #add-modal-card from the thumbnail's
-      // position/size to its final layout box. The sample photo already lives
-      // inside the card (#outfit-modal-image, object-cover), so it scales along
-      // with it - no separate clone. The backdrop tint + card opacity fade in
-      // over the same window via .modal-anim-in--fade-only (styles.css + the
-      // modalSig hook). Debug: window.flyMs / ?fly=<ms> to slow it down.
-      const flyMs = Number(window.flyMs) || 550;
-      const flyEase = 'cubic-bezier(.22,1,.3,1)';
-      const startedAt = performance.now();
-      let done = false;
-
-      const finish = card => {
-        if (done) return;
-        done = true;
-        sampleFly.pending = false;
-        if (card) {
-          card.style.transition = '';
-          card.style.transform = '';
-          card.style.transformOrigin = '';
-          delete card.dataset.sampleFlying;
-        }
-        const backdrop = document.querySelector('#app-overlay .modal-backdrop');
-        if (backdrop) {
-          backdrop.classList.remove('modal-anim-in--fade-only', 'modal-anim-in');
-          backdrop.style.removeProperty('--fly-ms');
-        }
-      };
-
-      const step = () => {
-        const card = document.getElementById('add-modal-card');
-        const to = card && card.getBoundingClientRect();
-        if (to && to.width > 8) {
-          const s = fromRect.width / to.width;
-          const tx = fromRect.left - to.left;
-          const ty = fromRect.top - to.top;
-          card.dataset.sampleFlying = '1';
-          card.style.transformOrigin = 'top left';
-          card.style.transition = 'none';
-          card.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
-          void card.offsetWidth; // commit the start frame
-          requestAnimationFrame(() => {
-            card.style.transition = `transform ${flyMs}ms ${flyEase}`;
-            card.style.transform = 'none';
-          });
-          card.addEventListener('transitionend', () => finish(card), { once: true });
-          setTimeout(() => finish(card), flyMs + 250);
-          return;
-        }
-        if (performance.now() - startedAt > 3000) { finish(null); return; }
-        requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
     }
-
-    // true while a sample-tap transition is running - the modalSig hook uses it
-    // to hold the backdrop transparent so the grow shows against the empty state.
-    const sampleFly = { pending: false };
 
     // Process an image File regardless of source (upload input, drag & drop, URL fetch).
     // `source`, when the image came from a link, is { url, title }.
@@ -2752,7 +2686,7 @@ CRITICAL RULES:
         flipGrid.play();
         // Removed the last outfit - ease the empty state back in.
         if (!state.outfits.length && !reduce) {
-          const emptyEl = document.querySelector('.empty');
+          const emptyEl = document.querySelector('.empty-hero');
           if (emptyEl) { emptyEl.classList.remove('empty--enter'); void emptyEl.offsetWidth; emptyEl.classList.add('empty--enter'); }
         }
         showUndoToast('Outfit deleted', async () => {
@@ -4128,21 +4062,11 @@ CRITICAL RULES:
             (fromEl.tagName === 'INPUT' || fromEl.tagName === 'TEXTAREA' || fromEl.isContentEditable)) {
           return false;
         }
-        // Preserve JS-driven animation classes across mid-flight re-renders -
-        // the template strings don't carry them, so morphdom would strip them
-        // (e.g. the sample-fly hides the modal photo via --fade-only).
-        if (fromEl.classList && fromEl.classList.contains('modal-anim-in--fade-only')) {
-          toEl.classList.add('modal-anim-in--fade-only');
-          const flyMs = fromEl.style && fromEl.style.getPropertyValue('--fly-ms');
-          if (flyMs) toEl.style.setProperty('--fly-ms', flyMs);
-        }
-        // Keep the sample-fly card FLIP transform/transition alive across a
-        // re-render that lands mid-flight (e.g. analysis finishing).
-        if (fromEl.dataset && fromEl.dataset.sampleFlying) {
-          toEl.dataset.sampleFlying = '1';
-          toEl.style.transformOrigin = fromEl.style.transformOrigin;
-          toEl.style.transform = fromEl.style.transform;
-          toEl.style.transition = fromEl.style.transition;
+        // The modal entrance class is added in JS by the modalSig hook, not by
+        // the template strings - carry it across re-renders that land while the
+        // entrance animation is still playing, so morphdom doesn't strip it.
+        if (fromEl.classList && fromEl.classList.contains('modal-anim-in')) {
+          toEl.classList.add('modal-anim-in');
         }
         return true;
       }
@@ -4236,12 +4160,15 @@ CRITICAL RULES:
       });
 
       if (!skipMainRebuild) {
-        const appMainHTML = `
-          <!-- Header -->
+        // First-run hero: no outfits yet - a full-screen splash with its own
+        // wordmark + mint background, so the app chrome (logo/search/Upload/menu)
+        // is hidden.
+        const heroEmpty = !state.outfits.length;
+        const headerHTML = `
           <header class="app-header">
             <div class="app-header__inner">
               <div class="app-header__brand">
-                <img src="Percha.svg" alt="Percha" class="app-logo" role="button" tabindex="0" title="Home" onclick="goHome()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goHome();}">
+                <span class="app-logo" role="button" aria-label="Percha - home" tabindex="0" title="Home" onclick="goHome()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goHome();}"></span>
               </div>
               ${renderSearchBox()}
               <div class="app-header__actions">
@@ -4289,9 +4216,11 @@ CRITICAL RULES:
               </div>
             </div>
           </header>
+        `;
 
-          <!-- Main Content -->
-          <main class="app-main">
+        const appMainHTML = `
+          ${heroEmpty ? '' : headerHTML}
+          <main class="app-main ${heroEmpty ? 'app-main--hero' : ''}">
             ${renderMainView(filteredOutfits)}
           </main>
         `;
@@ -4418,16 +4347,9 @@ CRITICAL RULES:
       if (modalSig && modalSig !== render._modalSig) {
         const modalEl = appOverlay.querySelector('.modal-backdrop') || appMain.querySelector('.modal-backdrop');
         if (modalEl) {
-          modalEl.classList.remove('modal-anim-in', 'modal-anim-in--fade-only');
+          modalEl.classList.remove('modal-anim-in');
           void modalEl.offsetWidth; // restart the animation
           modalEl.classList.add('modal-anim-in');
-          // While a sample-tap card FLIP is running, fade the backdrop tint +
-          // card opacity in over --fly-ms and skip the panel slide (see
-          // useSampleImage + .modal-anim-in--fade-only).
-          if (sampleFly.pending) {
-            modalEl.style.setProperty('--fly-ms', (Number(window.flyMs) || 550) + 'ms');
-            modalEl.classList.add('modal-anim-in--fade-only');
-          }
         }
       }
       render._modalSig = modalSig;
@@ -5050,23 +4972,21 @@ CRITICAL RULES:
     function renderGalleryView(outfits) {
       if (!state.outfits.length) {
         return `
-          <div class="empty">
-            <svg class="w-20 h-20 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p class="text-gray-500 dark:text-gray-400 mb-2 flex items-center justify-center gap-1.5">
-              Percha will automatically detect items, colors, and types
-              <span aria-hidden="true">✨</span>
-            </p>
-            <p class="text-xs text-gray-400 dark:text-gray-500 mb-6">You can also drag &amp; drop an image, or paste one with ⌘V / Ctrl+V</p>
-            <label class="btn-primary">
-              Upload
+          <div class="empty-hero">
+            <div class="empty-hero__logo" role="button" tabindex="0" title="Home"
+                 onclick="goHome()"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goHome();}"></div>
+            <p class="empty-hero__tagline">Your wardrobe, made easy.</p>
+            <p class="empty-hero__body">Upload your outfits once. Decide what to wear in seconds, every day after.</p>
+            <label class="btn-primary empty-hero__cta">
+              Upload your first look
               <input type="file" accept="image/*" onchange="handleImageUpload(event)" class="hidden">
             </label>
-            <div class="mt-6 flex items-center justify-center gap-3">
+            <div class="empty-hero__divider">Or choose a sample image</div>
+            <div class="empty-hero__samples">
               ${['sample1.jpeg', 'sample2.jpg', 'sample3.jpg'].map(s => `
-                <button type="button" onclick="useSampleImage('${s}', this.querySelector('img'))" title="Try this sample photo" class="w-16 h-20 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 transition-colors">
-                  <img src="${s}" alt="Sample outfit" class="w-full h-full object-cover">
+                <button type="button" onclick="useSampleImage('${s}', this.querySelector('img'))" title="Try this sample photo" class="empty-hero__sample">
+                  <img src="${s}" alt="Sample outfit">
                 </button>
               `).join('')}
             </div>
@@ -5359,19 +5279,32 @@ CRITICAL RULES:
     // max-width transition just reveals more of the (always full-size) right
     // panel, which fades in once the card has finished widening. See styles.css
     // .add-modal-* .
-    function renderModalShell({ wide, ariaLabel, closeExpr, animate, imagePane, rightColumn }) {
+    function renderModalShell({ wide, ariaLabel, closeExpr, animate, imagePane, rightColumn, title }) {
       // closeExpr closes the modal - fired when the click lands on the dark area
       // OR on the empty space left/right of the card (the wrap), not the card itself.
       const guarded = closeExpr ? `onclick="if (event.target === this) { ${closeExpr} }"` : '';
+      // Mobile-only close affordance: a back arrow floating over the top-left of
+      // the photo (the title itself lives in the panel). Always in the DOM, keyed
+      // by id so morphdom keeps #add-modal-body stable across re-renders.
+      const mobileHead = `
+        <div id="add-modal-mobilehead" class="add-modal-mobilehead">
+          <button type="button" class="add-modal-mobilehead__back" aria-label="Close" onclick="${closeExpr || ''}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+        </div>
+      `;
       return `
         <div class="modal-backdrop" role="dialog" aria-modal="true" aria-label="${ariaLabel}" tabindex="-1" ${guarded}>
           <div class="add-modal-wrap relative w-full flex justify-center" ${guarded}>
-            <div id="add-modal-card" class="add-modal-card rounded-2xl shadow-2xl w-full ${animate ? 'add-modal-card--animate' : ''}" style="max-width:${wide ? '69rem' : '34rem'}">
-              <div class="add-modal-body">
+            <div id="add-modal-card" class="add-modal-card shadow-2xl w-full ${wide ? 'add-modal-card--wide' : ''} ${animate ? 'add-modal-card--animate' : ''}" style="max-width:${wide ? '69rem' : '34rem'}">
+              ${mobileHead}
+              <div id="add-modal-body" class="add-modal-body">
                 <div id="person-box-stage" class="add-modal-image relative bg-gray-100 dark:bg-gray-900 aspect-[3/4] flex items-center justify-center overflow-hidden md:sticky md:top-0 md:self-start">
                   ${imagePane}
                 </div>
-                <div id="add-modal-right" class="add-modal-panel bg-white dark:bg-gray-800 ${wide ? '' : 'add-modal-panel--hidden'}">${rightColumn || ''}</div>
+                <div id="add-modal-right" class="add-modal-panel ${wide ? 'bg-white dark:bg-gray-800' : 'add-modal-panel--hidden'}">${rightColumn || ''}</div>
               </div>
             </div>
           </div>
@@ -5389,8 +5322,20 @@ CRITICAL RULES:
         ${!analyzing && state.currentImagePersonBox && !state.skipBoxAdjust ? renderPersonBoxOverlay() : ''}
       `;
 
-      const rightColumn = analyzing ? '' : `
-        <div class="mb-6 stagger" style="--stagger-i:0">
+      const rightColumn = analyzing ? `
+        <div class="mb-6 panel-recognizing-title">
+          <h2 class="h2 title">Recognizing elements</h2>
+        </div>
+        <div class="space-y-4 mb-6">
+          ${[0, 1].map(() => `
+            <div class="border dark:border-gray-600 color-row flex gap-3 w-full items-center">
+              <div class="skeleton skeleton--dot"></div>
+              <div class="skeleton skeleton--bar"></div>
+            </div>
+          `).join('')}
+        </div>
+      ` : `
+        <div class="mb-6 stagger modal-panel-title" style="--stagger-i:0">
           <h2 class="h2 title">${escapeHtml(state.detectedOutfitName) || 'Gemini Detected Items'}</h2>
           ${state.batchTotal > 1 ? `<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Image ${state.batchIndex} of ${state.batchTotal}</p>` : ''}
         </div>
@@ -5417,7 +5362,7 @@ CRITICAL RULES:
       `;
 
       return renderModalShell({
-        wide: !analyzing,
+        wide: true,
         ariaLabel: analyzing ? 'Analyzing outfit' : 'Add outfit',
         closeExpr: 'cancelAddOutfit();',
         animate: true,
@@ -5443,7 +5388,7 @@ CRITICAL RULES:
       `;
 
       const rightColumn = `
-        <div class="flex justify-between mb-6 stagger" style="--stagger-i:0">
+        <div class="flex justify-between mb-5 stagger modal-panel-title" style="--stagger-i:0">
           <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
             ${escapeHtml(o.outfitName || o.name.split(',').map(s => s.trim()).filter(Boolean).join(' · '))}
           </h2>
@@ -5484,11 +5429,15 @@ CRITICAL RULES:
               Studio Finish
             </button>
           ` : ''}
-          ${studioFinishInProgress ? '' : `<button onclick="closeDetailModal();" class="btn-primary">Save Outfit</button>`}
-          ${studioFinishInProgress ? '' : o.aiGenerated ? `
-            <button onclick="discardOutfitImage()" class="px-3 py-3 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20">Discard</button>
-          ` : `
-            <button onclick="deleteOutfit('${o.id}')" class="px-3 py-3 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20">Delete</button>
+          ${studioFinishInProgress ? '' : `
+            <div class="detail-actions">
+              <button onclick="closeDetailModal();" class="btn-primary">Save Outfit</button>
+              ${o.aiGenerated ? `
+                <button onclick="discardOutfitImage()" class="px-3 py-3 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20">Discard</button>
+              ` : `
+                <button onclick="deleteOutfit('${o.id}')" class="px-3 py-3 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20">Delete</button>
+              `}
+            </div>
           `}
         </div>
       `;
@@ -5498,6 +5447,7 @@ CRITICAL RULES:
         ariaLabel: 'Outfit details',
         closeExpr: 'if (!state.editing) closeDetailModal();',
         animate: state.animateAddFlow,
+        title: o.outfitName || o.name.split(',').map(s => s.trim()).filter(Boolean).join(' · '),
         imagePane,
         rightColumn
       });
@@ -5669,7 +5619,7 @@ CRITICAL RULES:
         else if (kind === 'replay') {
           goHome();
           setTimeout(() => {
-            const thumb = document.querySelector('.empty button img');
+            const thumb = document.querySelector('.empty-hero__sample img');
             if (thumb) useSampleImage(thumb.getAttribute('src') || 'sample1.jpeg', thumb);
           }, 60);
         }
