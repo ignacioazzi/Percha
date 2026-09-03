@@ -20,6 +20,10 @@
   <link rel="stylesheet" href="styles.css">
   <script src="prompts.js"></script>
 </head>
+<style>
+  .transition-colors {
+   transition-duration: 50000ms}
+</style>
 <body class="bg-white dark:bg-gray-900 min-h-screen">
   <!-- Split from one #app into two containers purely as a render()
        optimization: #app-main (header + gallery/add-view) is skipped on
@@ -38,6 +42,28 @@
     const GEMINI_SEARCH_MODEL = 'gemini-flash-latest';
     const GEMINI_SEARCH_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_SEARCH_MODEL}:generateContent`;
     const DEFAULT_STYLE_INSTRUCTIONS = 'Unless the request below explicitly says otherwise, keep the same colors, model gender, background, and overall style as the reference image (or as prior generations in this session) — only change what is specifically asked for.';
+
+    // Debug mode: append ?debug to the URL (optionally &fly=<ms> for the
+    // sample-fly / modal animation speed). Turns on:
+    //   - mock outfit detection (no Gemini call, no tokens)
+    //   - Studio Finish disabled (auto pass + one-click button both no-op)
+    // e.g. localhost:8777/?debug        localhost:8777/?debug&fly=5000
+    const DEBUG = (() => {
+      const p = new URLSearchParams(location.search);
+      const on = p.has('debug');
+      const fly = Number(p.get('fly'));
+      if (fly > 0) {
+        window.flyMs = fly;
+        // scale every modal-flow animation in step with the fly (base = 550ms)
+        document.documentElement.style.setProperty('--anim-scale', (fly / 550).toFixed(3));
+      } else if (on) {
+        window.flyMs = 550;
+      }
+      if (on) {
+        console.log('%c[DEBUG] mock detection + Studio Finish disabled' + (fly > 0 ? ` + flyMs=${fly}` : ''), 'color:#e11d48;font-weight:bold');
+      }
+      return { on, mock: on, noStudioFinish: on };
+    })();
     // $ per 1M tokens, from Google's published Gemini API pricing. gemini-2.5-flash-image's
     // "output" tokens are image tokens (1290 tokens ≈ one 1024px image, $30/1M ≈ $0.039/image) -
     // a different rate than its text output would be. gemini-flash-latest is a rolling alias
@@ -158,7 +184,8 @@ mo    }
       sortBy: localStorage.getItem('sort-by') || 'recent', // 'default' | 'recent'
       piecesView: localStorage.getItem('pieces-view') || 'grid', // 'grid' | 'table'
       outfitsView: localStorage.getItem('outfits-view') || 'grid', // 'grid' | 'table'
-      outfitCols: localStorage.getItem('outfit-cols') || '4', // '3' | '4' - gallery grid column count (lg+)
+      outfitCols: localStorage.getItem('outfit-cols') || '4', // '3' | '4' - gallery grid columns (lg+)
+      outfitColsSm: localStorage.getItem('outfit-cols-sm') || '2', // '1' | '2' - gallery grid columns on small screens
       searchQuery: '',
       searchOpen: false,
       searchActiveIndex: -1, // which dropdown chip ArrowUp/ArrowDown has highlighted, if any - see getSearchChips/handleSearchKeydown
@@ -367,6 +394,7 @@ mo    }
     // Save data. Returns false (instead of throwing) if IndexedDB write fails.
     async function saveData() {
       if (PREVIEW_MODE) return true; // never persist mock/preview data over the real wardrobe
+      if (DEBUG.on) return true; // ?debug: keep changes in-memory only, gone on reload
       try {
         await idbSet(IDB_WARDROBE_KEY, { outfits: state.outfits });
         checkStorageQuota(); // not awaited - a toast side effect, shouldn't hold up save()'s caller
@@ -1673,6 +1701,7 @@ mo    }
     // fires the moment it's clicked, always using STUDIO_FINISH_INSTRUCTION as
     // the whole prompt.
     async function applyStudioFinish() {
+      if (DEBUG.noStudioFinish) { showToast('Studio Finish is disabled in ?debug mode'); return; }
       if (!state.geminiApiKey) {
         state.showSettings = true;
         render();
@@ -1848,6 +1877,19 @@ mo    }
     // Ask Gemini to detect clothing items in an image. Returns the item list, or
     // throws on any API/parse failure — callers decide how to fall back.
     async function detectClothingItems(imageBase64, mimeType) {
+      if (DEBUG.mock) {
+        await new Promise(r => setTimeout(r, 600));
+        return {
+          items: [
+            { name: 'Black jacket', type: 'jacket', color: '#222222', pattern: 'solid', material: 'other', fit: 'regular', inRealWardrobe: false, box: null },
+            { name: 'White shirt', type: 'shirt', color: '#f2f2f2', pattern: 'solid', material: 'cotton', fit: 'regular', inRealWardrobe: false, box: null },
+            { name: 'Blue pants', type: 'pants', color: '#3b4d6b', pattern: 'solid', material: 'denim', fit: 'slim', inRealWardrobe: false, box: null }
+          ],
+          gender: 'unisex',
+          personBox: null,
+          outfitName: 'Mock outfit (debug)'
+        };
+      }
       const response = await fetch(`${GEMINI_SEARCH_API_URL}?key=${encodeURIComponent(state.geminiApiKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1968,11 +2010,16 @@ CRITICAL RULES:
     // through the exact same processFile() path a real upload uses - no mock,
     // real Gemini detection and Studio Finish. fetch() (and canvas readback) are
     // both blocked when the page is opened as a file://, so it needs to be served.
-    async function useSampleImage(src) {
+    async function useSampleImage(src, thumbEl) {
       if (location.protocol === 'file:') {
         showToast('Sample images only work when the app is served over http (e.g. `python3 -m http.server`), not opened as a file.');
         return;
       }
+
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const fromRect = (thumbEl && !reduce) ? thumbEl.getBoundingClientRect() : null;
+      if (fromRect && fromRect.width) sampleFly.pending = true;
+
       try {
         const res = await fetch(src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1980,9 +2027,70 @@ CRITICAL RULES:
         processFile(new File([blob], src.split('/').pop(), { type: blob.type || 'image/jpeg' }));
       } catch (err) {
         console.error('useSampleImage failed:', err);
+        sampleFly.pending = false;
         showToast('Could not load that sample image — is the local server still running?');
+        return;
       }
+
+      if (!fromRect || !fromRect.width) return;
+
+      // Shared-element grow: FLIP the real #add-modal-card from the thumbnail's
+      // position/size to its final layout box. The sample photo already lives
+      // inside the card (#outfit-modal-image, object-cover), so it scales along
+      // with it - no separate clone. The backdrop tint + card opacity fade in
+      // over the same window via .modal-anim-in--fade-only (styles.css + the
+      // modalSig hook). Debug: window.flyMs / ?fly=<ms> to slow it down.
+      const flyMs = Number(window.flyMs) || 550;
+      const flyEase = 'cubic-bezier(.22,1,.3,1)';
+      const startedAt = performance.now();
+      let done = false;
+
+      const finish = card => {
+        if (done) return;
+        done = true;
+        sampleFly.pending = false;
+        if (card) {
+          card.style.transition = '';
+          card.style.transform = '';
+          card.style.transformOrigin = '';
+          delete card.dataset.sampleFlying;
+        }
+        const backdrop = document.querySelector('#app-overlay .modal-backdrop');
+        if (backdrop) {
+          backdrop.classList.remove('modal-anim-in--fade-only', 'modal-anim-in');
+          backdrop.style.removeProperty('--fly-ms');
+        }
+      };
+
+      const step = () => {
+        const card = document.getElementById('add-modal-card');
+        const to = card && card.getBoundingClientRect();
+        if (to && to.width > 8) {
+          const s = fromRect.width / to.width;
+          const tx = fromRect.left - to.left;
+          const ty = fromRect.top - to.top;
+          card.dataset.sampleFlying = '1';
+          card.style.transformOrigin = 'top left';
+          card.style.transition = 'none';
+          card.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+          void card.offsetWidth; // commit the start frame
+          requestAnimationFrame(() => {
+            card.style.transition = `transform ${flyMs}ms ${flyEase}`;
+            card.style.transform = 'none';
+          });
+          card.addEventListener('transitionend', () => finish(card), { once: true });
+          setTimeout(() => finish(card), flyMs + 250);
+          return;
+        }
+        if (performance.now() - startedAt > 3000) { finish(null); return; }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
     }
+
+    // true while a sample-tap transition is running - the modalSig hook uses it
+    // to hold the backdrop transparent so the grow shows against the empty state.
+    const sampleFly = { pending: false };
 
     // Process an image File regardless of source (upload input, drag & drop, URL fetch).
     // `source`, when the image came from a link, is { url, title }.
@@ -2555,7 +2663,7 @@ CRITICAL RULES:
       // clears currentImage* for the next draft (or the gallery).
       const rawImage = state.currentImage;
       const personBox = state.currentImagePersonBox;
-      const studioFinishToken = state.autoStudioFinish ? state.currentImageToken : null;
+      const studioFinishToken = (state.autoStudioFinish && !DEBUG.noStudioFinish) ? state.currentImageToken : null;
       const studioFinishSwapGender = state.studioFinishSwapGender;
       const studioFinishPrompt = state.studioFinishPromptDraft || getDefaultStudioFinishPrompt(state.detectedItems);
 
@@ -2598,8 +2706,9 @@ CRITICAL RULES:
         render();
         return;
       }
-      if (!localStorage.getItem('first-outfit-saved')) {
-        localStorage.setItem('first-outfit-saved', '1');
+      // Celebrate the first outfit - re-triggers whenever the wardrobe went
+      // back to empty (so it's genuinely "your first" again), not a one-time flag.
+      if (state.outfits.length === 1) {
         showToast('You saved your first outfit! Yay!');
       } else {
         showToast('Outfit added');
@@ -2641,6 +2750,11 @@ CRITICAL RULES:
         await saveData();
         render();
         flipGrid.play();
+        // Removed the last outfit - ease the empty state back in.
+        if (!state.outfits.length && !reduce) {
+          const emptyEl = document.querySelector('.empty');
+          if (emptyEl) { emptyEl.classList.remove('empty--enter'); void emptyEl.offsetWidth; emptyEl.classList.add('empty--enter'); }
+        }
         showUndoToast('Outfit deleted', async () => {
           flipGrid.capture();
           state.outfits.splice(Math.min(index, state.outfits.length), 0, removed);
@@ -3344,8 +3458,13 @@ CRITICAL RULES:
     }
 
     function setOutfitCols(n) {
-      state.outfitCols = n;
-      localStorage.setItem('outfit-cols', n);
+      if (n === '1' || n === '2') {
+        state.outfitColsSm = n;
+        localStorage.setItem('outfit-cols-sm', n);
+      } else {
+        state.outfitCols = n;
+        localStorage.setItem('outfit-cols', n);
+      }
       flipGrid.capture();
       render();
       flipGrid.play();
@@ -4009,6 +4128,22 @@ CRITICAL RULES:
             (fromEl.tagName === 'INPUT' || fromEl.tagName === 'TEXTAREA' || fromEl.isContentEditable)) {
           return false;
         }
+        // Preserve JS-driven animation classes across mid-flight re-renders -
+        // the template strings don't carry them, so morphdom would strip them
+        // (e.g. the sample-fly hides the modal photo via --fade-only).
+        if (fromEl.classList && fromEl.classList.contains('modal-anim-in--fade-only')) {
+          toEl.classList.add('modal-anim-in--fade-only');
+          const flyMs = fromEl.style && fromEl.style.getPropertyValue('--fly-ms');
+          if (flyMs) toEl.style.setProperty('--fly-ms', flyMs);
+        }
+        // Keep the sample-fly card FLIP transform/transition alive across a
+        // re-render that lands mid-flight (e.g. analysis finishing).
+        if (fromEl.dataset && fromEl.dataset.sampleFlying) {
+          toEl.dataset.sampleFlying = '1';
+          toEl.style.transformOrigin = fromEl.style.transformOrigin;
+          toEl.style.transform = fromEl.style.transform;
+          toEl.style.transition = fromEl.style.transition;
+        }
         return true;
       }
     };
@@ -4283,9 +4418,16 @@ CRITICAL RULES:
       if (modalSig && modalSig !== render._modalSig) {
         const modalEl = appOverlay.querySelector('.modal-backdrop') || appMain.querySelector('.modal-backdrop');
         if (modalEl) {
-          modalEl.classList.remove('modal-anim-in');
+          modalEl.classList.remove('modal-anim-in', 'modal-anim-in--fade-only');
           void modalEl.offsetWidth; // restart the animation
           modalEl.classList.add('modal-anim-in');
+          // While a sample-tap card FLIP is running, fade the backdrop tint +
+          // card opacity in over --fly-ms and skip the panel slide (see
+          // useSampleImage + .modal-anim-in--fade-only).
+          if (sampleFly.pending) {
+            modalEl.style.setProperty('--fly-ms', (Number(window.flyMs) || 550) + 'ms');
+            modalEl.classList.add('modal-anim-in--fade-only');
+          }
         }
       }
       render._modalSig = modalSig;
@@ -4589,8 +4731,7 @@ CRITICAL RULES:
       const activeChipId = state.searchActiveIndex >= 0 && chips[state.searchActiveIndex] ? `search-chip-${state.searchActiveIndex}` : '';
 
       return `
-      <div></div>
-        <div class="relative flex-1 min-w-[180px]">
+        <div class="app-header__search relative">
           <div class="relative">
             <input id="search-input" type="text" data-focus-id="search-input" value="${escapeHtml(state.searchQuery)}" oninput="setSearchQuery(this.value)" onkeydown="handleSearchKeydown(event)" onblur="closeSearchDropdown()" placeholder="Search outfits or pieces" role="combobox" aria-expanded="${dropdownVisible}" aria-controls="search-dropdown" ${activeChipId ? `aria-activedescendant="${activeChipId}"` : ''} class="w-full h-10 pl-3 pr-9 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:outline-none focus:border-gray-500 dark:focus:border-gray-400">
             ${q ? `
@@ -4634,7 +4775,7 @@ CRITICAL RULES:
               `}
             </div>
           ` : ''}
-        </div><div></div>
+        </div>
       `;
     }
 
@@ -4663,14 +4804,23 @@ CRITICAL RULES:
     }
 
     // Gallery grid column count - 3 or 4 (only affects lg+ screens).
+    // Column-count toggle. Offers 1/2 on small screens, 3/4 otherwise - each with
+    // its own persisted preference (state.outfitColsSm / state.outfitCols).
+    function isSmallScreen() {
+      return window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+    }
+
     function renderColumnsControl() {
+      const sm = isSmallScreen();
+      const pair = sm ? ['1', '2'] : ['3', '4'];
+      const current = sm ? state.outfitColsSm : state.outfitCols;
       const opt = (n) => `
-        <button data-sl-active="${state.outfitCols === n}" onclick="setOutfitCols('${n}')" class="segmented-opt" title="${n} columns">${n}</button>
+        <button data-sl-active="${current === n}" onclick="setOutfitCols('${n}')" class="segmented-opt" title="${n} columns">${n}</button>
       `;
       return `
         <div class="segmented" data-seg="outfitCols">
           <span class="segmented-thumb" aria-hidden="true"></span>
-          ${opt('3')}${opt('4')}
+          ${opt(pair[0])}${opt(pair[1])}
         </div>
       `;
     }
@@ -4741,11 +4891,15 @@ CRITICAL RULES:
       // No outfits at all yet - skip the tabs/control chrome, just the upload state.
       if (!state.outfits.length) return renderGalleryView(outfits);
 
+      // Columns toggle lives in the toolbar (rightmost) on desktop, and next to
+      // the sort select in the section head on mobile - see renderGalleryView /
+      // renderPiecesTableView. The matchMedia listener re-renders on breakpoint
+      // cross so it hops between the two spots.
       return `
         <div class="main-toolbar">
           <div class="main-toolbar__start">${renderTabBar()}</div>
           <div class="main-toolbar__center">${renderStatusControl()}</div>
-          ${(state.mainTab === 'pieces' || state.outfitsView === 'grid') ? `<div class="main-toolbar__cols">${renderColumnsControl()}</div>` : ''}
+          ${isSmallScreen() ? '' : `<div class="main-toolbar__end">${renderColumnsControl()}</div>`}
         </div>
         ${state.mainTab === 'pieces' ? renderPiecesView() : renderGalleryView(outfits)}
       `;
@@ -4911,7 +5065,7 @@ CRITICAL RULES:
             </label>
             <div class="mt-6 flex items-center justify-center gap-3">
               ${['sample1.jpeg', 'sample2.jpg', 'sample3.jpg'].map(s => `
-                <button type="button" onclick="useSampleImage('${s}')" title="Try this sample photo" class="w-16 h-20 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 transition-colors">
+                <button type="button" onclick="useSampleImage('${s}', this.querySelector('img'))" title="Try this sample photo" class="w-16 h-20 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 transition-colors">
                   <img src="${s}" alt="Sample outfit" class="w-full h-full object-cover">
                 </button>
               `).join('')}
@@ -4951,9 +5105,9 @@ CRITICAL RULES:
       return `
         <div class="main-section__head">
           <h2 class="main-heading">${sorted.length} ${statusFilterPrefix()}${sorted.length === 1 ? 'outfit' : 'outfits'}</h2>
-          ${renderSortControl()}
+          <div class="section-head__controls">${renderSortControl()}${isSmallScreen() ? renderColumnsControl() : ""}</div>
         </div>
-        <div class="outfit-grid outfit-grid--${state.outfitCols}">
+        <div class="outfit-grid outfit-grid--sm${state.outfitColsSm} outfit-grid--${state.outfitCols}">
           ${cards.join('')}
         </div>
         ${state.statusFilter !== 'owned' ? renderMissingItemsSummary() : ''}
@@ -5079,7 +5233,7 @@ CRITICAL RULES:
       return `
         <div class="main-section__head">
           <h2 class="main-heading">${pieces.length} ${statusFilterPrefix()}${pieces.length === 1 ? 'piece' : 'pieces'}</h2>
-          ${renderPiecesSortControl()}
+          <div class="section-head__controls">${renderPiecesSortControl()}${isSmallScreen() ? renderColumnsControl() : ""}</div>
         </div>
         <div class="card">
           <table class="w-full text-left border-collapse">
@@ -5107,7 +5261,7 @@ CRITICAL RULES:
                       </div>
                     </td>
                     <td class="py-6 px-3 align-middle w-full">
-                      <div class="outfit-grid outfit-grid--${state.outfitCols}">
+                      <div class="outfit-grid outfit-grid--sm${state.outfitColsSm} outfit-grid--${state.outfitCols}">
                         ${outfitsShown.map(outfit => `
                           <div class="relative group">
                             <img src="${outfit.imageUrl}" onclick="openOutfitDetail(${JSON.stringify(outfit).replace(/"/g, '&quot;')})" title="${escapeHtml(outfit.name)}" class="w-full aspect-[3/4] object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity bg-gray-100 dark:bg-gray-900">
@@ -5212,12 +5366,12 @@ CRITICAL RULES:
       return `
         <div class="modal-backdrop" role="dialog" aria-modal="true" aria-label="${ariaLabel}" tabindex="-1" ${guarded}>
           <div class="add-modal-wrap relative w-full flex justify-center" ${guarded}>
-            <div id="add-modal-card" class="add-modal-card bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-h-[90vh] w-full ${animate ? 'add-modal-card--animate' : ''}" style="max-width:${wide ? '69rem' : '34rem'}">
+            <div id="add-modal-card" class="add-modal-card rounded-2xl shadow-2xl w-full ${animate ? 'add-modal-card--animate' : ''}" style="max-width:${wide ? '69rem' : '34rem'}">
               <div class="add-modal-body">
                 <div id="person-box-stage" class="add-modal-image relative bg-gray-100 dark:bg-gray-900 aspect-[3/4] flex items-center justify-center overflow-hidden md:sticky md:top-0 md:self-start">
                   ${imagePane}
                 </div>
-                <div id="add-modal-right" class="add-modal-panel ${wide ? '' : 'add-modal-panel--hidden'}">${rightColumn || ''}</div>
+                <div id="add-modal-right" class="add-modal-panel bg-white dark:bg-gray-800 ${wide ? '' : 'add-modal-panel--hidden'}">${rightColumn || ''}</div>
               </div>
             </div>
           </div>
@@ -5231,7 +5385,7 @@ CRITICAL RULES:
 
       const imagePane = `
         <img src="${state.currentImage}" alt="" aria-hidden="true" class="outfit-photo-backdrop">
-        <img id="outfit-modal-image" src="${state.currentImage}" class="outfit-photo outfit-photo-contain">
+        <img id="outfit-modal-image" src="${state.currentImage}" class="outfit-photo outfit-photo-cover">
         ${!analyzing && state.currentImagePersonBox && !state.skipBoxAdjust ? renderPersonBoxOverlay() : ''}
       `;
 
@@ -5282,7 +5436,7 @@ CRITICAL RULES:
 
       const imagePane = `
         <img src="${o.imageUrl}" alt="" aria-hidden="true" class="outfit-photo-backdrop">
-        <img id="outfit-modal-image" src="${state.modalImageFading ? state.modalImagePrev : o.imageUrl}" class="outfit-photo ${(!state.modalImageFading && o.aiPhoto) ? 'outfit-photo-cover' : 'outfit-photo-contain'}">
+        <img id="outfit-modal-image" src="${state.modalImageFading ? state.modalImagePrev : o.imageUrl}" class="outfit-photo outfit-photo-cover">
         ${state.modalImageFading ? `
           <img id="studio-finish-modal-overlay-img" src="${o.imageUrl}" style="opacity:0; transition: opacity 0.6s ease;" class="absolute inset-0 w-full h-full object-cover rounded-lg">
         ` : ''}
@@ -5325,12 +5479,12 @@ CRITICAL RULES:
           </div>
         `)}
         <div class="flex flex-col gap-3 stagger" style="--stagger-i:${o.items.length + 1}">
-          ${(!o.aiPhoto && !studioFinishInProgress) ? `
+          ${(!o.aiPhoto && !studioFinishInProgress && !DEBUG.noStudioFinish) ? `
             <button onclick="applyStudioFinish()" title="One click: fix pose/lighting, recrop to 85% frame, clean studio background, remove stray text, sharpen" class="px-3 py-3 border dark:border-gray-600 dark:text-gray-200  font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-center gap-2">
               Studio Finish
             </button>
           ` : ''}
-          <button onclick="closeDetailModal();" class="btn-primary">Save Outfit</button>
+          ${studioFinishInProgress ? '' : `<button onclick="closeDetailModal();" class="btn-primary">Save Outfit</button>`}
           ${studioFinishInProgress ? '' : o.aiGenerated ? `
             <button onclick="discardOutfitImage()" class="px-3 py-3 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20">Discard</button>
           ` : `
@@ -5448,6 +5602,12 @@ CRITICAL RULES:
     window.addEventListener('focus', focusPasteTarget);
     document.addEventListener('click', focusPasteTarget);
 
+    // Re-render when crossing the mobile breakpoint so the columns toggle swaps
+    // between its 1/2 and 3/4 options (renderColumnsControl reads the viewport).
+    if (window.matchMedia) {
+      window.matchMedia('(max-width: 640px)').addEventListener('change', () => render());
+    }
+
     // Left/Right arrow keys step between outfits while the detail modal is open. Ignored
     // while typing in a field (renaming an item, etc.), while an edit is in flight,
     // or while a color-picker/eyedropper popup owns the keyboard.
@@ -5466,7 +5626,55 @@ CRITICAL RULES:
       // Back/forward and hand-edited #step= URLs jump straight to that step.
       window.addEventListener('hashchange', applyPreviewScenarioFromHash);
     }
+    if (DEBUG.on) installDebugPanel();
     loadData();
+
+    // ?debug: a small floating panel to tune animation timing live.
+    function installDebugPanel() {
+      const base = 550;
+      const wrap = document.createElement('div');
+      wrap.style.cssText =
+        'position:fixed;right:12px;bottom:12px;z-index:9999;background:#111;color:#fff;' +
+        'font:12px/1.4 -apple-system,system-ui,sans-serif;padding:12px 14px;border-radius:12px;' +
+        'box-shadow:0 12px 32px -8px rgba(0,0,0,.6);width:220px;user-select:none;';
+      wrap.innerHTML = `
+        <div style="font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+          <span>debug · anim</span>
+          <button data-dbg="hide" style="background:none;border:none;color:#888;cursor:pointer;font-size:14px">×</button>
+        </div>
+        <label style="display:block;margin-bottom:2px">duration <b data-dbg="val"></b> ms</label>
+        <input data-dbg="range" type="range" min="100" max="8000" step="50" style="width:100%">
+        <div style="display:flex;gap:6px;margin:8px 0">
+          ${[300, 550, 2000, 5000].map(v => `<button data-dbg="preset" data-v="${v}" style="flex:1;background:#333;border:none;color:#fff;border-radius:6px;padding:4px 0;cursor:pointer">${v}</button>`).join('')}
+        </div>
+        <button data-dbg="replay" style="width:100%;background:#2563eb;border:none;color:#fff;border-radius:6px;padding:6px 0;cursor:pointer;font-weight:600">▶ replay sample grow</button>
+      `;
+      document.body.appendChild(wrap);
+      const rangeEl = wrap.querySelector('[data-dbg="range"]');
+      const valEl = wrap.querySelector('[data-dbg="val"]');
+      const apply = ms => {
+        window.flyMs = ms;
+        document.documentElement.style.setProperty('--anim-scale', (ms / base).toFixed(3));
+        valEl.textContent = ms;
+        rangeEl.value = ms;
+      };
+      apply(Number(window.flyMs) || base);
+      rangeEl.addEventListener('input', () => apply(Number(rangeEl.value)));
+      wrap.addEventListener('click', e => {
+        const b = e.target.closest('[data-dbg]');
+        if (!b) return;
+        const kind = b.dataset.dbg;
+        if (kind === 'preset') apply(Number(b.dataset.v));
+        else if (kind === 'hide') wrap.remove();
+        else if (kind === 'replay') {
+          goHome();
+          setTimeout(() => {
+            const thumb = document.querySelector('.empty button img');
+            if (thumb) useSampleImage(thumb.getAttribute('src') || 'sample1.jpeg', thumb);
+          }, 60);
+        }
+      });
+    }
   </script>
 </body>
 </html>

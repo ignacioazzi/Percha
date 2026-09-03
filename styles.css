@@ -2,6 +2,14 @@
    box-sizing: border-box;
 }
 
+/* Global multiplier for the add/detail modal-flow animations. Normally 1;
+   ?fly=<ms> in the URL sets it to <ms>/550 so the whole sequence (backdrop
+   fade, panel slide, screen fade, stagger, card resize) slows down in step
+   with the sample-fly clone instead of the fly alone stretching out. */
+:root {
+   --anim-scale: 1;
+}
+
 /* Indeterminate horizontal progress bar - a track with a segment that sweeps
    left to right on a loop. Used on the add/review "analyzing" screen. */
 .progress-indeterminate {
@@ -139,16 +147,25 @@ html.dark .h2 {
    color: #f3f4f6;
 }
 
+
+
 .modal-backdrop {
    position: fixed;
    inset: 0;
    background-color: rgba(0, 0, 0, 0.5);
+   /* so the sample-tap transition can fade the tint in together with the photo
+      grow (--fade-only starts it transparent, useSampleImage animates it dark) */
+   transition: background-color calc(0.5s * var(--anim-scale)) cubic-bezier(.22, 1, .3, 1);
    display: flex;
    align-items: center;
    justify-content: center;
    z-index: 50;
    padding: 16px;
    cursor: pointer;
+}
+
+@media (max-width: 640px) {
+   .modal-backdrop { padding: 0; }
 }
 
 /* The backdrop itself is click-to-dismiss (pointer), but the panel sitting on
@@ -178,17 +195,32 @@ html.dark .h2 {
 }
 
 .modal-anim-in {
-   animation: modal-fade-in 0.2s ease;
+   animation: modal-fade-in calc(0.2s * var(--anim-scale)) ease;
 }
 .modal-anim-in > * {
-   animation: modal-panel-in 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+   animation: modal-panel-in calc(0.26s * var(--anim-scale)) cubic-bezier(0.16, 1, 0.3, 1);
 }
 .modal-anim-out {
-   animation: modal-fade-out 0.2s ease forwards;
+   animation: modal-fade-out calc(0.2s * var(--anim-scale)) ease forwards;
    pointer-events: none;
 }
 .modal-anim-out > * {
-   animation: modal-panel-out 0.2s ease forwards;
+   animation: modal-panel-out calc(0.2s * var(--anim-scale)) ease forwards;
+}
+/* Sample-tap entrance: the real #add-modal-card is FLIP'd from the thumbnail
+   (see useSampleImage) while the backdrop tint + card opacity fade in over the
+   same --fly-ms window. useSampleImage's finish() removes this class. */
+@keyframes sample-fly-in {
+   /* tint only - the card itself stays fully opaque and just grows */
+   from { background-color: rgba(0, 0, 0, 0); }
+   to   { background-color: rgba(0, 0, 0, 0.5); }
+}
+.modal-anim-in--fade-only {
+   background-color: transparent;
+   animation: sample-fly-in var(--fly-ms, 550ms) cubic-bezier(.22, 1, .3, 1) both;
+}
+.modal-anim-in--fade-only > * {
+   animation: none; /* card fades in via the backdrop's opacity, no separate slide */
 }
 
 /* Plays once on mount - only applied on the render that first shows the
@@ -203,7 +235,7 @@ html.dark .h2 {
       to the upload-processing modal's spinner it replaces (same size/color,
       same spot on screen). A slow fade here reads as that old spinner
       lingering/reappearing rather than a clean handoff to the new screen. */
-   animation: screen-fade-in 0.3s ease;
+   animation: screen-fade-in calc(0.3s * var(--anim-scale)) ease;
 }
 
 @keyframes message-fade-out {
@@ -211,7 +243,7 @@ html.dark .h2 {
    to { opacity: 0; }
 }
 .message-fade-out {
-   animation: message-fade-out 0.35s ease forwards;
+   animation: message-fade-out calc(0.35s * var(--anim-scale)) ease forwards;
 }
 
 /* Standardised toast - one look for every step's status message (see showToast /
@@ -236,6 +268,14 @@ html.dark .h2 {
    max-width: calc(100vw - 32px);
    text-align: center;
    animation: toast-in 0.2s ease;
+}
+
+@media (max-width: 640px) {
+   .toast {
+      width: 90%;
+      max-width: 90%;
+      border-radius: 14px;
+   }
 }
 
 /* "Undo" action inside a toast */
@@ -328,6 +368,16 @@ html.dark .empty {
    border-color: #4b5563;
 }
 
+/* Added by deleteOutfit() when the last outfit is removed, so the empty state
+   eases back in instead of snapping. */
+@keyframes empty-fade-in {
+   from { opacity: 0; transform: translateY(10px); }
+   to   { opacity: 1; transform: none; }
+}
+.empty--enter {
+   animation: empty-fade-in 0.4s cubic-bezier(.22, 1, .3, 1);
+}
+
 .label {
    font-size: 10px;
    letter-spacing: 0.06em;
@@ -404,6 +454,10 @@ html.dark .segmented-thumb {
    border: none;
    border-radius: 7px;
    transition: color 0.15s ease;
+}
+
+@media (max-width: 640px) {
+   .segmented-opt { padding: 6px 14px; }
 }
 
 .segmented-opt:hover {
@@ -591,10 +645,10 @@ html.dark .search-piece-chip[data-active="true"] {
 }
 
 .color-swatch {
-    width: 42px;
-    height: 42px;
-    border-radius: 11px!important;
-    border: 4px solid #ffffff;
+    width: 32px;
+    height: 32px;
+    border-radius: 11px !important;
+    border: 3px solid #ffffff;
 }
 
 /* Themeable replacement for the raw <input type="color"> on the review screen -
@@ -680,6 +734,25 @@ html.dark .color-swatch-dot {
 .app-header__actions {
     display: flex;
     gap: 12px;
+}
+
+.app-header__search {
+    flex: 1 1 auto;
+    min-width: 180px;
+}
+
+/* Mobile: logo + Upload/cog on one row, search full-width on its own row below. */
+@media (max-width: 640px) {
+    .app-header__inner {
+        row-gap: 10px;
+    }
+    .app-header__brand { order: 1; }
+    .app-header__actions { order: 2; }
+    .app-header__search {
+        order: 3;
+        flex-basis: 100%;
+        min-width: 0;
+    }
 }
 
 /* "Add from URL" - currently hidden (hidden attribute), kept styled for later. */
@@ -791,6 +864,10 @@ html.dark .color-swatch-dot {
     padding: 32px 16px;
 }
 
+@media (max-width: 640px) {
+    .app-main { padding: 16px; }
+}
+
 /* Add-outfit / detail modal shell (renderModalShell). One #add-modal-card for
    all three states (analyzing / review / detail); morphdom keeps it, and its
    max-width transition takes it from compact (image only) to wide (image +
@@ -806,9 +883,22 @@ html.dark .color-swatch-dot {
 }
 
 .add-modal-card {
+    max-height: 90vh;
     overflow-x: hidden;
     overflow-y: auto;
-    transition: max-width 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: max-width calc(0.32s * var(--anim-scale)) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Mobile: full-screen sheet - edge to edge, reaching the bottom. */
+@media (max-width: 640px) {
+    .add-modal-card {
+        min-height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+    }
+    .add-modal-panel {
+        padding: 1.5rem;
+    }
 }
 
 .add-modal-body {
@@ -831,19 +921,17 @@ html.dark .color-swatch-dot {
        and lets the card scroll when the content is taller. */
     align-self: stretch;
     opacity: 1;
-    transform: none;
     overflow: hidden;
-    /* delay so it comes in only once the card has finished widening */
-    transition: opacity 0.22s ease 0.24s, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.24s;
+    /* The panel has NO entrance animation of its own - it's always fully opaque
+       and in place. Its reveal is purely the card's max-width widening (see
+       .add-modal-card) pushing this flex item from ~0 to full width, clipped by
+       the card's overflow:hidden. Behaves identically at any --anim-scale. */
 }
 
 .add-modal-panel--hidden {
     padding-left: 0;
     padding-right: 0;
-    opacity: 0;
-    transform: translateX(-24px);
     pointer-events: none;
-    transition: opacity 0.12s ease, transform 0s;
 }
 
 /* Entrance animations - ONLY on .add-modal-card--animate, which is set only
@@ -859,25 +947,12 @@ html.dark .color-swatch-dot {
     to { opacity: 1; transform: none; }
 }
 .add-modal-card--animate .add-modal-panel .stagger {
-    animation: stagger-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(0.3s + var(--stagger-i, 0) * 130ms);
-}
-
-/* Scale + fade the photo in. The image element persists across
-   analyzing/review/detail (morphdom), so this only runs once, on creation. */
-@keyframes add-image-in {
-    from { opacity: 0; transform: scale(0.9); }
-    to { opacity: 1; transform: scale(1); }
-}
-.add-modal-card--animate .outfit-photo,
-.add-modal-card--animate .outfit-photo-backdrop {
-    animation: add-image-in 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: stagger-in calc(0.45s * var(--anim-scale)) cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc((0.3s + var(--stagger-i, 0) * 130ms) * var(--anim-scale));
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .add-modal-card--animate .add-modal-panel .stagger,
-    .add-modal-card--animate .outfit-photo,
-    .add-modal-card--animate .outfit-photo-backdrop { animation: none; }
+    .add-modal-card--animate .add-modal-panel .stagger { animation: none; }
 }
 
 @media (min-width: 768px) {
@@ -933,6 +1008,12 @@ html.dark .main-heading {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* small screens - explicit 1/2 choice from the columns toggle */
+@media (max-width: 640px) {
+    .outfit-grid--sm1 { grid-template-columns: minmax(0, 1fr); }
+    .outfit-grid--sm2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (min-width: 768px) {
     .outfit-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .pieces-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -941,7 +1022,7 @@ html.dark .main-heading {
 @media (min-width: 1024px) {
     .outfit-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .pieces-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    /* explicit column choice from the toolbar toggle */
+    /* explicit 3/4 choice from the columns toggle */
     .outfit-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .outfit-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
@@ -965,6 +1046,12 @@ html.dark .main-heading {
     background-position: right 14px center;
 }
 
+@media (max-width: 640px) {
+    .sort-select {
+        padding: 8px 14px 8px 14px;
+    }
+}
+
 .sort-select:hover {
     background-color: #f9fafb;
 }
@@ -981,27 +1068,27 @@ html.dark .sort-select:hover {
 
 .main-toolbar {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 12px;
     margin: 0 0 3em 0;
 }
 
 .main-toolbar__start,
 .main-toolbar__center,
-.main-toolbar__cols,
 .main-toolbar__end {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-@media (min-width: 640px) {
-    .main-toolbar {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-    }
+/* sort select + 3/4 toggle, grouped at the right of the section heading */
+.section-head__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 html.dark .app-header {
