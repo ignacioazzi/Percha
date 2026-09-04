@@ -211,6 +211,21 @@ html.dark .h2 {
    animation: modal-panel-out calc(0.2s * var(--anim-scale)) ease forwards;
 }
 
+/* Desktop sample-tap entrance: the real #add-modal-card is FLIP'd from the
+   thumbnail (see useSampleImage) while the backdrop tint fades in over the same
+   --fly-ms window. useSampleImage's finish() removes this class. */
+@keyframes sample-fly-in {
+   from { background-color: rgba(0, 0, 0, 0); }
+   to   { background-color: rgba(0, 0, 0, 0.5); }
+}
+.modal-anim-in--fade-only {
+   background-color: transparent;
+   animation: sample-fly-in var(--fly-ms, 550ms) cubic-bezier(.22, 1, .3, 1) both;
+}
+.modal-anim-in--fade-only > * {
+   animation: none; /* the card grows via the FLIP, no separate panel slide */
+}
+
 /* Plays once on mount - only applied on the render that first shows the
    add/review screen (see state.addViewJustEntered), not on every re-render
    while it's already up. */
@@ -399,12 +414,10 @@ html.dark .app-main.app-main--hero {
    text-align: center;
 }
 .empty-hero__logo {
+   display: block;
    width: 220px;
    max-width: 66vw;
-   aspect-ratio: 188 / 53;
-   background-color: #2b47d3;
-   -webkit-mask: url(percha2.svg) center / contain no-repeat;
-   mask: url(percha2.svg) center / contain no-repeat;
+   height: auto;
    cursor: pointer;
    margin-bottom: 10px;
 }
@@ -774,18 +787,23 @@ html.dark .skeleton {
     background-color: rgba(255, 255, 255, 0.08);
     background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0) 100%);
 }
+/* ~80% of a real .color-row's footprint */
+.skeleton-row {
+    padding-top: 0.8em;
+    padding-bottom: 0.8em;
+}
 .skeleton--dot {
-    width: 32px;
-    height: 32px;
-    border-radius: 11px;
+    width: 26px;
+    height: 26px;
+    border-radius: 9px;
     flex-shrink: 0;
 }
 .skeleton--bar {
-    height: 14px;
+    height: 11px;
     flex: 1;
     max-width: 62%;
 }
-.color-row:nth-child(2) .skeleton--bar {
+.skeleton-row:nth-child(2) .skeleton--bar {
     max-width: 45%;
 }
 
@@ -860,15 +878,13 @@ html.dark .color-swatch-dot {
     display: flex;
     align-items: center;
     gap: 12px;
+    padding: 0px 6px 0px 0px;
 }
 
 .app-logo {
     display: block;
     height: 26px;
-    width: calc(26px * 188 / 53);
-    background-color: #2b47d3;
-    -webkit-mask: url(percha2.svg) center / contain no-repeat;
-    mask: url(percha2.svg) center / contain no-repeat;
+    width: auto;
     cursor: pointer;
 }
 
@@ -1103,6 +1119,12 @@ html.dark .color-swatch-dot {
         flex: 1 1 0;
         min-width: 0;
         max-width: 35rem;
+        /* slides in from the left once the card has finished widening
+           (analyzing -> review); fully opaque the whole time, no fade */
+        transition: transform calc(0.28s * var(--anim-scale)) cubic-bezier(0.16, 1, 0.3, 1) calc(0.24s * var(--anim-scale));
+    }
+    .add-modal-panel--hidden {
+        transform: translateX(-24px);
     }
 }
 
@@ -1142,11 +1164,29 @@ html.dark .color-swatch-dot {
     .add-modal-panel {
         padding: 1.5rem;
         flex: 1;
+        overflow: visible;
     }
     /* the outfit name is redundant on the mobile sheet - drop it (the
        "Recognizing elements" status heading stays) */
     .modal-panel-title {
         display: none;
+    }
+
+    /* Dialog action buttons pinned to the bottom of the sheet on a white bar. */
+    .modal-panel-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        margin: 1rem -1.5rem -1.5rem;
+        padding: 0.875rem 1.5rem calc(0.875rem + env(safe-area-inset-bottom, 0px));
+        background: #fff;
+        border-top: 1px solid #e5e7eb;
+        box-shadow: 0 -6px 18px -8px rgba(0, 0, 0, 0.15);
+    }
+    html.dark .modal-panel-actions {
+        background: #1f2937;
+        border-top-color: #374151;
+        box-shadow: 0 -6px 18px -8px rgba(0, 0, 0, 0.5);
     }
 
     /* Back arrow floating over the top-left of the photo (transparent, the
@@ -1198,6 +1238,14 @@ html.dark .color-swatch-dot {
 
 html.dark .main-heading {
     color: #f3f4f6;
+}
+
+@keyframes main-heading-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.main-heading--change {
+    animation: main-heading-fade calc(0.3s * var(--anim-scale)) ease;
 }
 
 /* Card grids in Main content. Edit column counts / gap here. */
